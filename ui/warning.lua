@@ -7,7 +7,11 @@ local hearthButton = nil
 local bindingsActive = false
 local reloadText = nil
 
--- Hearthstone item IDs in priority order
+-- Hearthstone item IDs in priority order:
+-- 1. Regular hearthstone
+-- 2. Dalaran Hearthstone
+-- 3. Garrison Hearthstone
+-- 4. Toy hearthstones (separate cooldown from regular)
 local HEARTHSTONE_ITEMS = {
   6948,    -- Hearthstone
   140192,  -- Dalaran Hearthstone
@@ -57,15 +61,6 @@ local function isItemReady(itemID)
   return start == 0 or duration <= 1.5
 end
 
-local function getAvailableHearthstone()
-  for _, id in ipairs(HEARTHSTONE_ITEMS) do
-    if isItemReady(id) then
-      return id
-    end
-  end
-  return nil
-end
-
 -- Class spells that can force the player out
 -- Each entry: { spellID, spellName, classes }
 local CLASS_ESCAPE_SPELLS = {
@@ -102,22 +97,30 @@ local CLASS_ESCAPE_SPELLS = {
   { 556,    "Astral Recall",          "SHAMAN" },
 }
 
+local function isSpellReady(spellID)
+  if not IsSpellKnown(spellID) then return false end
+  local info = C_Spell.GetSpellCooldown(spellID)
+  if not info then return true end
+  return info.startTime == 0 or info.duration <= 1.5
+end
+
 local function buildHearthMacro()
   local lines = {}
-  -- Add class-specific escape spells first
+  -- Priority 1: Class-specific escape spells (only if off cooldown)
   local _, playerClass = UnitClass("player")
   for _, entry in ipairs(CLASS_ESCAPE_SPELLS) do
-    if entry[3] == playerClass and IsSpellKnown(entry[1]) then
+    if entry[3] == playerClass and isSpellReady(entry[1]) then
       lines[#lines + 1] = "/cast " .. entry[2]
     end
   end
-  -- Add hearthstone items the player owns
+  -- Priority 2-4: Hearthstone > Dalaran > Garrison > toys (only if off cooldown)
   for _, id in ipairs(HEARTHSTONE_ITEMS) do
-    if GetItemCount(id) > 0 or PlayerHasToy(id) then
+    if isItemReady(id) then
       lines[#lines + 1] = "/use item:" .. id
     end
   end
   if #lines == 0 then
+    -- Nothing available — fallback to regular hearthstone anyway
     lines[#lines + 1] = "/use item:6948"
   end
   return table.concat(lines, "\n")
@@ -203,6 +206,27 @@ local function createWarningFrame()
   warningFrame:Hide()
 end
 
+local macroRefreshTicker = nil
+
+local function refreshMacro()
+  if not hearthButton or not bindingsActive then return end
+  if InCombatLockdown() then return end
+  hearthButton:SetAttribute("macrotext", buildHearthMacro())
+end
+
+local function stopMacroRefresh()
+  if macroRefreshTicker then
+    macroRefreshTicker:Cancel()
+    macroRefreshTicker = nil
+  end
+end
+
+local function startMacroRefresh()
+  stopMacroRefresh()
+  -- Rebuild macro every 2 seconds to pick up cooldown changes
+  macroRefreshTicker = C_Timer.NewTicker(2, refreshMacro)
+end
+
 local function activateBindings()
   if not hearthButton then return end
 
@@ -210,26 +234,21 @@ local function activateBindings()
   -- may not fire HOUSE_PLOT_EXITED, leaving bindingsActive true)
   if bindingsActive then
     ClearOverrideBindings(hearthButton)
+    stopMacroRefresh()
     bindingsActive = false
   end
 
-  local itemID = getAvailableHearthstone()
-  if itemID then
-    hearthButton:SetAttribute("macrotext", buildHearthMacro())
-    hearthButton:Show()
-    for _, key in ipairs(BIND_KEYS) do
-      SetOverrideBindingClick(hearthButton, true, key, "HomelessHearthButton")
-    end
-    bindingsActive = true
-  else
-    hearthButton:Hide()
-    if reloadText then
-      reloadText:Show()
-    end
+  hearthButton:SetAttribute("macrotext", buildHearthMacro())
+  hearthButton:Show()
+  for _, key in ipairs(BIND_KEYS) do
+    SetOverrideBindingClick(hearthButton, true, key, "HomelessHearthButton")
   end
+  bindingsActive = true
+  startMacroRefresh()
 end
 
 local function clearBindings()
+  stopMacroRefresh()
   if hearthButton then
     hearthButton:Hide()
   end
