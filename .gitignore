@@ -1,0 +1,4 @@
+# Libs are fetched by the packager at release time
+# Keep them locally for development, but don't need IDE cruft
+.DS_Store
+*.bak

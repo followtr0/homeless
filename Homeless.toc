@@ -2,9 +2,10 @@
 ## Title: Homeless
 ## Notes: Forces logout when you enter your own house. You are homeless.
 ## Author: Homeless
-## Version: 0.1.0
+## Version: @project-version@
 ## SavedVariablesPerCharacter: HomelessDB
 ## IconTexture: Interface\Icons\INV_Misc_Key_14
+## X-Curse-Project-ID: 1496231
 
 libs/LibStub/LibStub.lua
 libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
